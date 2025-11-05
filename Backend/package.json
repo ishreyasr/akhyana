@@ -1,0 +1,22 @@
+{
+  "name": "akhyana-backend",
+  "version": "1.0.0",
+  "description": "V2V Dashboard Backend Servers",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "peerjs": "node peerjs-server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.0",
+    "express": "^4.21.2",
+    "peer": "^1.0.2",
+    "ws": "^8.18.3",
+    "bcryptjs": "^2.4.3",
+    "uuid": "^9.0.1",
+    "geolib": "^3.3.4"
+  }
+}
