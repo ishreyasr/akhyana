@@ -37,5 +37,5 @@ Write-Host "   Render Dashboard: https://render.com/dashboard" -ForegroundColor 
 Write-Host "   GitHub Repo: https://github.com/ishreyasr/akhyana" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Press any key to open Render dashboard in browser..." -ForegroundColor Gray
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-Start-Process "https://render.com/dashboard"
+$null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+Start-Process 'https://render.com/dashboard'

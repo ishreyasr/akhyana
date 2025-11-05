@@ -4,8 +4,34 @@
     {
       "src": "package.json",
       "use": "@vercel/next"
+    },
+    {
+      "src": "api/peerjs.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/v2v-websocket.js",
+      "use": "@vercel/node"
     }
   ],
+  "routes": [
+    {
+      "src": "/api/peerjs/(.*)",
+      "dest": "/api/peerjs.js"
+    },
+    {
+      "src": "/api/v2v-websocket",
+      "dest": "/api/v2v-websocket.js"
+    }
+  ],
+  "functions": {
+    "api/peerjs.js": {
+      "maxDuration": 300
+    },
+    "api/v2v-websocket.js": {
+      "maxDuration": 300
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",
