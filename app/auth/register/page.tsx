@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,7 +26,7 @@ interface VehicleDetails {
     model: string;
 }
 
-export default function RegisterPage() {
+function RegisterForm() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [step, setStep] = useState(1); // 1 personal, 2 vehicle, 3 google bind
@@ -62,6 +62,10 @@ export default function RegisterPage() {
     const back = () => setStep(s => Math.max(1, s - 1));
 
     const handleGoogle = async () => {
+        if (!auth || !googleProvider) {
+            setError('Firebase authentication not configured');
+            return;
+        }
         setError(null); setLoading(true);
         try {
             await signInWithPopup(auth, googleProvider);
@@ -78,10 +82,12 @@ export default function RegisterPage() {
         setError(null); setLoading(true);
         try {
             // Try to create account in Firebase (prototype tolerant of existing)
-            try {
-                await createUserWithEmailAndPassword(auth, personal.email, personal.password);
-            } catch {
-                // ignore if exists
+            if (auth) {
+                try {
+                    await createUserWithEmailAndPassword(auth, personal.email, personal.password);
+                } catch {
+                    // ignore if exists
+                }
             }
             if (!googleLinked) throw new Error('Please link Google account');
             // Persist user centrally (Supabase) via backend proxy to enforce uniqueness
@@ -217,5 +223,17 @@ export default function RegisterPage() {
                 </CardContent>
             </Card>
         </div>
+    );
+}
+
+export default function RegisterPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen bg-background flex items-center justify-center p-4">
+                <div className="text-center">Loading...</div>
+            </div>
+        }>
+            <RegisterForm />
+        </Suspense>
     );
 }
