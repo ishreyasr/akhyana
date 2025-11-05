@@ -4,8 +4,15 @@ Backend/**
 .git
 .github
 __tests__
+__tests__/**
 vitest.config.ts
 test-*.html
 test-*.js
 *.test.ts
 *.test.tsx
+test-setup.ts
+render.yaml
+*.ps1
+*.bat
+deploy-*.ps1
+start-all-servers.*
