@@ -1,0 +1,11 @@
+Backend
+Backend/**
+*.md
+.git
+.github
+__tests__
+vitest.config.ts
+test-*.html
+test-*.js
+*.test.ts
+*.test.tsx
