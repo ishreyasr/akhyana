@@ -228,11 +228,7 @@ function RegisterForm() {
 
 export default function RegisterPage() {
     return (
-        <Suspense fallback={
-            <div className="min-h-screen bg-background flex items-center justify-center p-4">
-                <div className="text-center">Loading...</div>
-            </div>
-        }>
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
             <RegisterForm />
         </Suspense>
     );
