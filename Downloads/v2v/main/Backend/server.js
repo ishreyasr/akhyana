@@ -32,7 +32,7 @@ if (process.env.DISABLE_FIREBASE_AUTH !== '1') {
 
 // ---------------------- Config ----------------------
 const CONFIG = {
-  PORT: parseInt(process.env.V2V_SERVER_PORT || '3002', 10),
+  PORT: parseInt(process.env.PORT || process.env.V2V_SERVER_PORT || '3002', 10),
   WS_PATH: '/v2v',
   NEARBY_RADIUS_METERS: parseInt(process.env.NEARBY_RADIUS_METERS || '500', 10),
   HEARTBEAT_TIMEOUT_MS: 60_000,
