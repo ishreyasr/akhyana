@@ -1,0 +1,32 @@
+name: CI
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-test-audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - name: Install pnpm
+        run: npm i -g pnpm@9
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm lint || true
+      - name: Type Check
+        run: pnpm tsc --noEmit
+      - name: Tests
+        run: pnpm test
+      - name: Security Audit
+        run: pnpm audit || true

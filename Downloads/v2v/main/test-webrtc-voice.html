@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC Voice Call Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+
+        .status.connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .status.connecting {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .status.idle {
+            background-color: #e2e3e5;
+            color: #383d41;
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+
+        button.end-call {
+            background-color: #dc3545;
+        }
+
+        button.end-call:hover {
+            background-color: #c82333;
+        }
+
+        .audio-controls {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+
+        .call-info {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+        }
+
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🎤 WebRTC Voice Call Test</h1>
+        <p>This test simulates the voice communication between two vehicles using WebRTC.</p>
+
+        <div id="status" class="status idle">Status: Idle</div>
+
+        <div class="audio-controls">
+            <h3>Audio Controls</h3>
+            <button id="startCall" onclick="startCall()">📞 Start Call</button>
+            <button id="endCall" onclick="endCall()" class="end-call" disabled>📵 End Call</button>
+            <button id="muteMic" onclick="toggleMute()" disabled>🔇 Mute</button>
+        </div>
+
+        <div class="call-info">
+            <h3>Call Information</h3>
+            <div id="callDuration">Duration: 00:00</div>
+            <div id="connectionState">Connection State: New</div>
+            <div id="iceState">ICE State: New</div>
+            <div id="signalingState">Signaling State: Stable</div>
+        </div>
+
+        <div>
+            <h3>Debug Log</h3>
+            <div id="log" class="log"></div>
+            <button onclick="clearLog()">Clear Log</button>
+        </div>
+    </div>
+
+    <script>
+        // WebRTC Voice Call Test Implementation
+        let localStream = null;
+        let remoteStream = null;
+        let peerConnection = null;
+        let callStartTime = null;
+        let durationInterval = null;
+        let isMuted = false;
+
+        // Mock signaling server (in real implementation, this would be WebSocket)
+        const mockSignalingServer = {
+            sendOffer: (offer) => {
+                log('📤 Sending offer to remote peer');
+                // Simulate receiving offer on remote side
+                setTimeout(() => {
+                    handleIncomingOffer(offer);
+                }, 1000);
+            },
+            sendAnswer: (answer) => {
+                log('📤 Sending answer to remote peer');
+                // Simulate receiving answer on remote side
+                setTimeout(() => {
+                    handleIncomingAnswer(answer);
+                }, 1000);
+            },
+            sendIceCandidate: (candidate) => {
+                log('📤 Sending ICE candidate to remote peer');
+                // Simulate receiving ICE candidate on remote side
+                setTimeout(() => {
+                    handleIncomingIceCandidate(candidate);
+                }, 500);
+            }
+        };
+
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+
+        function updateStatus(status, className) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = `Status: ${status}`;
+            statusDiv.className = `status ${className}`;
+        }
+
+        function updateCallInfo() {
+            const connectionState = peerConnection ? peerConnection.connectionState : 'New';
+            const iceState = peerConnection ? peerConnection.iceConnectionState : 'New';
+            const signalingState = peerConnection ? peerConnection.signalingState : 'Stable';
+
+            document.getElementById('connectionState').textContent = `Connection State: ${connectionState}`;
+            document.getElementById('iceState').textContent = `ICE State: ${iceState}`;
+            document.getElementById('signalingState').textContent = `Signaling State: ${signalingState}`;
+        }
+
+        function updateDuration() {
+            if (callStartTime) {
+                const duration = Math.floor((Date.now() - callStartTime) / 1000);
+                const minutes = Math.floor(duration / 60);
+                const seconds = duration % 60;
+                document.getElementById('callDuration').textContent =
+                    `Duration: ${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+        }
+
+        async function startCall() {
+            try {
+                log('🎤 Starting voice call...');
+                updateStatus('Getting microphone access...', 'connecting');
+
+                // Get local audio stream
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        sampleRate: 44100
+                    }
+                });
+
+                log('✅ Microphone access granted');
+
+                // Create peer connection
+                peerConnection = new RTCPeerConnection({
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                        { urls: 'stun:stun2.l.google.com:19302' }
+                    ],
+                    iceCandidatePoolSize: 10
+                });
+
+                // Add local stream to peer connection
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                    log(`📤 Added ${track.kind} track to peer connection`);
+                });
+
+                // Set up event handlers
+                peerConnection.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        log('📤 ICE candidate generated');
+                        mockSignalingServer.sendIceCandidate(event.candidate);
+                    } else {
+                        log('📤 ICE candidate gathering complete');
+                    }
+                };
+
+                peerConnection.ontrack = (event) => {
+                    log('📥 Received remote track');
+                    remoteStream = event.streams[0];
+
+                    // Create audio element for remote stream
+                    const audio = document.createElement('audio');
+                    audio.srcObject = remoteStream;
+                    audio.autoplay = true;
+                    audio.playsInline = true;
+                    document.body.appendChild(audio);
+
+                    log('🔊 Remote audio stream connected');
+                };
+
+                peerConnection.onconnectionstatechange = () => {
+                    const state = peerConnection.connectionState;
+                    log(`🔗 Connection state changed: ${state}`);
+                    updateCallInfo();
+
+                    if (state === 'connected') {
+                        updateStatus('Connected - Voice call active', 'connected');
+                        callStartTime = Date.now();
+                        durationInterval = setInterval(updateDuration, 1000);
+
+                        // Enable call controls
+                        document.getElementById('endCall').disabled = false;
+                        document.getElementById('muteMic').disabled = false;
+                    } else if (state === 'failed') {
+                        updateStatus('Connection failed', 'error');
+                        endCall();
+                    }
+                };
+
+                peerConnection.oniceconnectionstatechange = () => {
+                    log(`🧊 ICE connection state: ${peerConnection.iceConnectionState}`);
+                    updateCallInfo();
+                };
+
+                peerConnection.onsignalingstatechange = () => {
+                    log(`📡 Signaling state: ${peerConnection.signalingState}`);
+                    updateCallInfo();
+                };
+
+                // Create and send offer
+                log('📤 Creating offer...');
+                const offer = await peerConnection.createOffer({
+                    offerToReceiveAudio: true,
+                    offerToReceiveVideo: false
+                });
+
+                await peerConnection.setLocalDescription(offer);
+                log('📤 Offer created and set as local description');
+
+                updateStatus('Connecting...', 'connecting');
+                mockSignalingServer.sendOffer(offer);
+
+                // Enable/disable buttons
+                document.getElementById('startCall').disabled = true;
+
+            } catch (error) {
+                log(`❌ Error starting call: ${error.message}`);
+                updateStatus('Error: ' + error.message, 'error');
+            }
+        }
+
+        async function handleIncomingOffer(offer) {
+            try {
+                log('📥 Received offer from remote peer');
+
+                if (!peerConnection) {
+                    // Create peer connection for callee
+                    peerConnection = new RTCPeerConnection({
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun1.l.google.com:19302' },
+                            { urls: 'stun:stun2.l.google.com:19302' }
+                        ],
+                        iceCandidatePoolSize: 10
+                    });
+
+                    // Set up event handlers (same as caller)
+                    peerConnection.onicecandidate = (event) => {
+                        if (event.candidate) {
+                            mockSignalingServer.sendIceCandidate(event.candidate);
+                        }
+                    };
+
+                    peerConnection.ontrack = (event) => {
+                        log('📥 Received remote track');
+                        remoteStream = event.streams[0];
+
+                        const audio = document.createElement('audio');
+                        audio.srcObject = remoteStream;
+                        audio.autoplay = true;
+                        audio.playsInline = true;
+                        document.body.appendChild(audio);
+
+                        log('🔊 Remote audio stream connected');
+                    };
+
+                    peerConnection.onconnectionstatechange = () => {
+                        const state = peerConnection.connectionState;
+                        log(`🔗 Connection state changed: ${state}`);
+                        updateCallInfo();
+
+                        if (state === 'connected') {
+                            updateStatus('Connected - Voice call active', 'connected');
+                            callStartTime = Date.now();
+                            durationInterval = setInterval(updateDuration, 1000);
+
+                            document.getElementById('endCall').disabled = false;
+                            document.getElementById('muteMic').disabled = false;
+                        } else if (state === 'failed') {
+                            updateStatus('Connection failed', 'error');
+                            endCall();
+                        }
+                    };
+
+                    peerConnection.oniceconnectionstatechange = () => {
+                        log(`🧊 ICE connection state: ${peerConnection.iceConnectionState}`);
+                        updateCallInfo();
+                    };
+
+                    peerConnection.onsignalingstatechange = () => {
+                        log(`📡 Signaling state: ${peerConnection.signalingState}`);
+                        updateCallInfo();
+                    };
+                }
+
+                // Get local audio stream
+                if (!localStream) {
+                    localStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true,
+                            sampleRate: 44100
+                        }
+                    });
+
+                    localStream.getTracks().forEach(track => {
+                        peerConnection.addTrack(track, localStream);
+                    });
+                }
+
+                // Set remote description and create answer
+                await peerConnection.setRemoteDescription(offer);
+                log('📥 Set remote description');
+
+                const answer = await peerConnection.createAnswer({
+                    offerToReceiveAudio: true,
+                    offerToReceiveVideo: false
+                });
+
+                await peerConnection.setLocalDescription(answer);
+                log('📤 Answer created and set as local description');
+
+                mockSignalingServer.sendAnswer(answer);
+
+            } catch (error) {
+                log(`❌ Error handling offer: ${error.message}`);
+                updateStatus('Error handling offer: ' + error.message, 'error');
+            }
+        }
+
+        async function handleIncomingAnswer(answer) {
+            try {
+                log('📥 Received answer from remote peer');
+                await peerConnection.setRemoteDescription(answer);
+                log('📥 Set remote description (answer)');
+            } catch (error) {
+                log(`❌ Error handling answer: ${error.message}`);
+            }
+        }
+
+        async function handleIncomingIceCandidate(candidate) {
+            try {
+                log('📥 Received ICE candidate');
+                await peerConnection.addIceCandidate(candidate);
+                log('📥 ICE candidate added');
+            } catch (error) {
+                log(`❌ Error handling ICE candidate: ${error.message}`);
+            }
+        }
+
+        function endCall() {
+            log('📵 Ending call...');
+
+            if (durationInterval) {
+                clearInterval(durationInterval);
+                durationInterval = null;
+            }
+
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+            }
+
+            if (remoteStream) {
+                remoteStream.getTracks().forEach(track => track.stop());
+                remoteStream = null;
+            }
+
+            // Remove audio elements
+            const audioElements = document.querySelectorAll('audio');
+            audioElements.forEach(audio => audio.remove());
+
+            updateStatus('Call ended', 'idle');
+            callStartTime = null;
+
+            // Reset buttons
+            document.getElementById('startCall').disabled = false;
+            document.getElementById('endCall').disabled = true;
+            document.getElementById('muteMic').disabled = true;
+            isMuted = false;
+            document.getElementById('muteMic').textContent = '🔇 Mute';
+
+            // Reset call info
+            document.getElementById('callDuration').textContent = 'Duration: 00:00';
+            updateCallInfo();
+        }
+
+        function toggleMute() {
+            if (localStream) {
+                isMuted = !isMuted;
+                localStream.getAudioTracks().forEach(track => {
+                    track.enabled = !isMuted;
+                });
+
+                const muteButton = document.getElementById('muteMic');
+                muteButton.textContent = isMuted ? '🔊 Unmute' : '🔇 Mute';
+
+                log(isMuted ? '🔇 Microphone muted' : '🔊 Microphone unmuted');
+            }
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        // Initialize
+        log('🎤 WebRTC Voice Call Test initialized');
+        log('📝 Click "Start Call" to begin voice communication test');
+        updateCallInfo();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "name": "akhyana-peerjs",
+  "builds": [
+    {
+      "src": "peerjs-server.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "peerjs-server.js"
+    }
+  ]
+}

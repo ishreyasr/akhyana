@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>V2V Frontend WebSocket Test</title>
+</head>
+
+<body>
+    <h1>V2V Frontend WebSocket Test</h1>
+    <div id="log"></div>
+
+    <script>
+        const log = document.getElementById('log');
+
+        function addLog(message) {
+            const div = document.createElement('div');
+            div.innerHTML = `[${new Date().toLocaleTimeString()}] ${message}`;
+            log.appendChild(div);
+            console.log(message);
+        }
+
+        addLog('🔗 Connecting to V2V WebSocket...');
+
+        const ws = new WebSocket('ws://localhost:3002/v2v');
+
+        ws.onopen = () => {
+            addLog('✅ Connected to V2V backend');
+
+            // Register a test vehicle
+            const testVehicle = {
+                vehicleId: 'frontend-test-' + Date.now(),
+                driverName: 'Frontend Test Driver',
+                vehicleInfo: {
+                    model: 'Test Browser Vehicle',
+                    color: 'purple'
+                }
+            };
+
+            ws.send(JSON.stringify({
+                event: 'register',
+                data: testVehicle
+            }));
+
+            addLog('📤 Sent registration: ' + testVehicle.vehicleId);
+        };
+
+        ws.onmessage = (event) => {
+            try {
+                const msg = JSON.parse(event.data);
+                addLog(`📥 Received: ${msg.event} - ${JSON.stringify(msg.data || {})}`);
+
+                if (msg.event === 'registered') {
+                    addLog('✅ Vehicle registered successfully');
+
+                    // Send location update
+                    setTimeout(() => {
+                        const location = {
+                            vehicleId: msg.data.vehicleId,
+                            lat: 37.7749,
+                            lon: -122.4194
+                        };
+
+                        ws.send(JSON.stringify({
+                            event: 'location_update',
+                            data: location
+                        }));
+
+                        addLog(`📍 Sent location: ${location.lat}, ${location.lon}`);
+                    }, 500);
+                }
+
+                if (msg.event === 'nearby_vehicles') {
+                    if (msg.data && msg.data.vehicles) {
+                        addLog(`🎯 NEARBY VEHICLES: ${msg.data.vehicles.length} vehicles found`);
+                        msg.data.vehicles.forEach(v => {
+                            addLog(`   - ${v.vehicleId}: ${v.distance}m away (${v.driverName})`);
+                        });
+                    } else {
+                        addLog(`🎯 NEARBY VEHICLES: No vehicles nearby`);
+                    }
+                }
+
+            } catch (e) {
+                addLog('❌ Error parsing message: ' + e.message);
+            }
+        };
+
+        ws.onerror = (error) => {
+            addLog('❌ WebSocket error: ' + error);
+        };
+
+        ws.onclose = (event) => {
+            addLog(`🔌 WebSocket closed: ${event.code} ${event.reason}`);
+        };
+
+        // Add button to test connection
+        const button = document.createElement('button');
+        button.textContent = 'Test Now';
+        button.onclick = () => {
+            if (ws.readyState === WebSocket.OPEN) {
+                addLog('🔄 WebSocket is connected and ready');
+            } else {
+                addLog('❌ WebSocket is not connected');
+            }
+        };
+        document.body.appendChild(button);
+    </script>
+</body>
+
+</html>

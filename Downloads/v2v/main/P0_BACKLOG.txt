@@ -1,0 +1,215 @@
+P0 PRIORITY BACKLOG (Core Real-Time Hardening)
+=================================================
+
+1. Emergency Alerts UI & UX
+   - Subscribe to real-time 'emergency_alert' events.
+   - Maintain in-memory active alerts list (session) with: id, senderId, vehicleInfo, ts, acknowledged (bool), via (ws/radio).
+   - Show toast/banner on arrival (once per alert id) with quick actions: Acknowledge, View List.
+   - Dashboard panel: list active (unack first), ability to acknowledge (soft-dismiss) & clear all.
+   - (Stretch) History: fetch last N from backend (/emergencies) and merge; show relative time.
+   - (Stretch) Severity tagging (derive if vehicleInfo.type or emergency type field added later).
+   - (Stretch) Persist acknowledgements (localStorage) to avoid re-toasting on reload.
+   Acceptance Criteria: Receiving an emergency alert updates list instantly; user sees toast; can acknowledge and list updates without reload.
+
+2. Call Session Lifecycle Tracking
+   - Add Supabase table call_sessions(id, caller_id, callee_id, state, started_at, answered_at, ended_at, last_signal_at, end_reason).
+   - Backend: on call_initiate create row; on webrtc_answer set answered_at/state=active; on call termination (custom 'call_end' event or ws close) set ended_at & reason.
+   - Frontend: show current call state (ringing, active, ended) & small history list.
+   - (Stretch) Missed call detection (initiated but not answered within timeout).
+   Acceptance Criteria: Each call generates a persisted record with correct timestamps.
+
+3. Presence & Last-Seen Indicators
+   - Track lastHeartbeat per vehicle (already) -> expose in presence_update events with lastSeen.
+   - Frontend: show colored status pill (online, offline, timeout) + relative time hover.
+   - Grey out or dim vehicles not seen in > HEARTBEAT_TIMEOUT_MS.
+   - (Stretch) Add /presence endpoint listing current active vehicles + lastSeen.
+   Acceptance Criteria: When a vehicle disconnects or times out UI updates within 1 refresh cycle (< heartbeat timeout + sweep interval).
+
+4. Auth Hardening (Server-Side)
+   - Require Firebase ID token (Authorization: Bearer <jwt>) on WebSocket 'register' event.
+   - Verify token using Firebase Admin SDK; reject if invalid.
+   - Tie vehicleId to auth uid/email mapping (prevent spoofing vehicleId collisions).
+   - Remove reliance on client-set cookie alone.
+   - (Stretch) Rate-limit failed auth attempts.
+   Acceptance Criteria: Invalid or missing token => error event + close; valid token registers successfully.
+
+5. Rate Limiting & Abuse Control
+   - Per vehicle sliding window counters: location_update (e.g. 5/sec), send_message (3/sec), signaling (call/webrtc_* 2/sec burst), emergency_alert (1/10s).
+   - Implement simple token bucket in memory; if exceeded send error { code: 'rate_limited', retryAfterMs }.
+   - (Stretch) Optionally persist counters in Redis for horizontal scale.
+   Acceptance Criteria: Excessive rapid events are throttled with informative error without crashing server.
+
+6. Input Validation & Sanitization
+   - Enforce max lengths: message content (<= 512 chars), driverName (<= 64), vehicleId pattern /^[A-Za-z0-9._-]{3,40}$/.
+   - Strip control characters; escape output where rendered (frontend already React safe; just store sanitized).
+   - Reject oversize payloads early with error { code: 'validation_error', field, issue }.
+   - (Stretch) Add contentType field for future (text, json) with validation.
+   Acceptance Criteria: Oversize or invalid inputs rejected and not broadcast.
+
+7. Standardized Error Event Format
+   - Define schema: { event: 'error', data: { code: string, message: string, ts: number, details?: any }}.
+   - Replace ad-hoc 'error' sends in server.js with helper sendError(ws, code, message, details?).
+   - Document codes: invalid_register, invalid_location, unknown_event, target_offline, rate_limited, auth_failed, validation_error.
+   - Frontend: central handler mapping code => user-facing toast/log.
+   Acceptance Criteria: All error events conform to schema and frontend logs them uniformly.
+
+Implementation Order (Suggested): 1 -> 7 sequential, each self-contained.
+
+Tracking Notes:
+- Keep patches minimal & incremental; update this file with DONE / date when completed.
+- Add quick unit/integration tests where feasible (e.g. rate limiting logic, validation helpers).
+
+---
+Status Log:
+(placeholder - update as tasks complete)
+
+=================================================
+P1 STABILITY & OBSERVABILITY
+=================================================
+1. Structured Metrics Endpoint
+   - Expose /metrics (Prometheus plaintext) with counters:
+     v2v_active_vehicles, v2v_messages_total, v2v_emergencies_total, v2v_call_sessions_total.
+   - Histogram or summary: message_delivery_latency_ms (send -> receive). (Stretch)
+   Acceptance: Curl /metrics returns non-empty; counters increment during activity.
+
+2. Proximity Events Persistence
+   - Table proximity_events(id, vehicle_id, peer_vehicle_id, event_type('enter'|'exit'), distance_m, occurred_at).
+   - Backend: diff last nearby list vs new; emit events and persist.
+   - Frontend: highlight newly arrived (badge 'NEW') for 10s.
+   Acceptance: Enter/exit transitions recorded & UI shows NEW badge.
+
+3. Reconnect & Backoff Tuning
+   - Exponential backoff with jitter for WS reconnect (max 30s).
+   - Display connection state banner (connecting / reconnecting / offline).
+   Acceptance: Simulated server drop shows banner & recovery with backoff.
+
+4. Logging Enrichment
+   - Add requestId/sessionId generator; attach to every log line in server.
+   - Structured child loggers for categories (auth, signaling, proximity).
+   Acceptance: Logs contain consistent correlation IDs.
+
+5. Enhanced Health Check
+   - /health returns: status, vehicles, radioEnabled, redis: up/down, supabase: up/down (test lightweight query), version, buildTimestamp.
+   Acceptance: /health reflects component failures when simulated.
+
+=================================================
+P2 UX & POLISH
+=================================================
+1. Nearby Panel Enhancements
+   - Empty state graphic; manual refresh button triggers on-demand proximity recalc.
+   - Sort toggle (distance | recent activity).
+   Acceptance: Toggle changes order; empty state visible when none.
+
+2. Geo Visualization
+   - Lightweight map (Leaflet) or canvas showing self + nearby with distance rings.
+   - Click marker selects vehicle.
+   Acceptance: Map updates live on peer_location events.
+
+3. Telemetry Bars Logic
+   - Integrate real metrics if available (or hide when unknown) for signal & battery.
+   - Add tooltip explaining data source.
+   Acceptance: No misleading static % values remain.
+
+4. Settings Persistence
+   - Supabase table user_settings(user_id, key, value, updated_at).
+   - Persist theme, distance unit, alert filter preferences.
+   Acceptance: Reload preserves chosen preferences.
+
+=================================================
+P3 PERFORMANCE & SCALE
+=================================================
+1. Spatial Index Optimization
+   - Replace O(n^2) computeNearbyList with grid indexing or geohash buckets.
+   - Benchmark before/after (vehicles = 1k, 5k simulated).
+   Acceptance: >3x throughput or <50% CPU for 5k vs baseline.
+   STATUS: Implemented (geohash index) 2025-09-05. Benchmark script: `npm run bench:spatial` (Backend/bench_spatial.js).
+      Results (local): 1k vehicles naive 34.51ms vs geohash 0.54ms (~63.6x); 5k vehicles naive 170.39ms vs 0.93ms (~183.4x).
+      Far exceeds >3x criterion. Next: optional CPU profiling & monitor v2v_spatial_* counters in production.
+
+2. Location Update Coalescing
+   - Debounce rapid client location updates (e.g. send max 5/sec).
+   - Server batches ack events (optional) or drops stale intermediate updates.
+   Acceptance: High-frequency update spam does not blow up message count.
+   STATUS: Implemented 2025-09-05 (client debounce ~200ms, server coalescing 150ms min). Metrics: v2v_location_updates_{received,processed,coalesced}. Follow-up (optional): tune intervals via env + add pub/sub awareness when clustering.
+
+3. Horizontal Scale Readiness
+   - Plan doc + code hooks: Use Redis pub/sub for broadcast events (presence_update, emergency_alert).
+   - Optional: extract WS layer to module enabling clustering (node cluster or separate process).
+   Acceptance: Documented path + skeleton code present.
+   STATUS: Skeleton implemented 2025-09-05. Redis pub/sub channel `v2v:broadcast`; doc: docs/HORIZONTAL_SCALE_PLAN.md. Remaining: distributed proximity + rate limit persistence.
+
+=================================================
+SECURITY & COMPLIANCE
+=================================================
+1. Secrets Management
+   - Remove Supabase anon key write perms from client; server proxy endpoints for writes.
+   - .env.example with required keys.
+   STATUS: Implemented 2025-09-05 (.env.example, client writes routed via /user-settings using service key upsert). Pending: key rotation policy doc.
+2. CORS & Origin Enforcement
+   - Only allow configured origins; validate WebSocket Origin header.
+   STATUS: Implemented 2025-09-05 (ALLOWED_ORIGINS env, CORS middleware, WS origin check).
+3. Content Sanitization
+   - Strip/escape control characters (regex) in user-submitted text.
+   STATUS: Implemented earlier (sanitize() helper). Consider adding HTML entity escape for any future rich content.
+4. Dependency Audit
+   - Add npm script audit + CI gate (allowlist low severity).
+   STATUS: Script + CI job added 2025-09-05 (.github/workflows/ci.yml). Pending: enforce threshold (currently soft-fail).
+5. Threat Modeling Note
+   - Short design doc enumerating attack surfaces & mitigations.
+   STATUS: Draft added 2025-09-05 (docs/THREAT_MODEL.md). Review after auth hardening.
+Acceptance: Security checklist doc & passing audits.
+
+=================================================
+TESTING STRATEGY
+=================================================
+1. Update Existing Tests
+   - Remove references to removed mock devices; adjust expectations.
+2. New Integration Tests (Vitest / Playwright optional)
+   - Auth required register (invalid token denied).
+   - Emergency alert propagation across two simulated clients.
+   - Call signaling (offer->answer) recorded in call_sessions.
+   - Proximity enter/exit event generation.
+3. Load Test Script (k6 or autocannon)
+   - Simulate N vehicles sending location updates; record latency & CPU usage guidance.
+4. Rate Limit Tests
+   - Ensure exceeding thresholds yields rate_limited code and resets after window.
+Acceptance: CI green; coverage improved; load test baseline recorded.
+
+=================================================
+RADIO LAYER (FUTURE)
+=================================================
+1. radio_frames Table
+   - Columns: id, type, sender_short, recipient_short, payload_len, checksum, received_at.
+2. Control/Ack Frames
+   - Type 0x10 for control; ack frame referencing message ID for reliability.
+3. RSSI Integration
+   - If hardware provides signal strength, include in peer_location or radio_text event.
+4. Retransmission Queue
+   - Store unsent frames when serial port unavailable; flush on reconnect.
+Acceptance: Frames persisted; ability to inspect last N frames via /radio/frames (debug endpoint).
+
+=================================================
+DEVOPS / DEPLOYMENT
+=================================================
+1. Dockerization
+   - Multi-stage Dockerfile for backend + Next.js frontend; docker-compose with Redis.
+2. CI Pipeline
+   - GitHub Actions: install, lint, type-check, test, build, audit.
+3. Versioning & Release
+   - Auto version bump on main merges; embed version & buildTimestamp in /health.
+4. Observability Stack (Stretch)
+   - Optional: integrate OpenTelemetry for tracing (WS events as spans).
+5. Deployment Guide
+   - README section: local dev, staging, production scaling & env variable matrix.
+Acceptance: One-command local stack (docker compose up) and reproducible build.
+
+=================================================
+NICE-TO-HAVE / IDEAS BACKLOG
+=================================================
+- WebRTC data channel for low-latency telemetry.
+- Voice call (Opus) streaming over WebRTC.
+- Geo-fenced alert rules (automatic emergency when severe deceleration).
+- Offline store & forward for messages.
+- Mobile PWA packaging.
+
+--- END OF BACKLOG ---

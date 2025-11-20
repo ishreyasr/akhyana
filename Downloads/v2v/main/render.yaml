@@ -1,0 +1,33 @@
+# Render Blueprint for V2V Backend Servers
+
+# This file can be used to deploy both backend services to Render
+# Alternatively, you can create each service manually in the Render dashboard
+
+services:
+  # PeerJS Signaling Server
+  - type: web
+    name: akhyana-peerjs
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node Backend/peerjs-server.js
+    envVars:
+      - key: PEERJS_PORT
+        value: 9000
+    healthCheckPath: /peerjs
+    
+  # WebSocket V2V Server
+  - type: web
+    name: akhyana-websocket
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node Backend/launch-server.js
+    envVars:
+      - key: V2V_SERVER_PORT
+        value: 3002
+      # Add these via Render dashboard after creation:
+      # - SUPABASE_URL (from your .env.local)
+      # - SUPABASE_SERVICE_KEY (from Supabase dashboard)
+      # - ALLOWED_ORIGINS (your Vercel URL)
+    healthCheckPath: /
