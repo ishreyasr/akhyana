@@ -9,6 +9,8 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  // Ensure all routes are properly handled
+  trailingSlash: false,
 }
 
 export default nextConfig
