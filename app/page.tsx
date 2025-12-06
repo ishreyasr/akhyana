@@ -1,14 +1,19 @@
-import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
+'use client';
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { V2VMainDashboard } from '../components/v2v-dashboard/V2VMainDashboard';
 
-// Ensure this page is always rendered per-request so auth cookie is checked.
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+export default function Page() {
+  const router = useRouter();
 
-export default async function Page() {
-  const store = await cookies();
-  const hasAuth = store.get('v2v_auth');
-  if (!hasAuth) redirect('/auth/login');
+  useEffect(() => {
+    // Check auth cookie on client side
+    const hasAuth = document.cookie.includes('v2v_auth=1');
+    if (!hasAuth) {
+      router.replace('/auth/login');
+    }
+  }, [router]);
+
   return <V2VMainDashboard />;
 }
