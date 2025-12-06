@@ -28,7 +28,7 @@ export default function LoginPage() {
         setLoading(true);
         try {
             // Use local authentication instead of Firebase
-            const apiBase = process.env.NEXT_PUBLIC_V2V_API || 'http://localhost:3002';
+            const apiBase = process.env.NEXT_PUBLIC_V2V_API || 'https://akhyana-websocket.onrender.com';
             console.log('Making request to:', `${apiBase}/auth/login-local`);
             const resp = await fetch(`${apiBase}/auth/login-local`, {
                 method: 'POST',

@@ -134,7 +134,7 @@ export default function ConnectedVehicleDashboard() {
     try {
       const vehicleId = vehicleIdParam || ''
       console.log('🔍 Fetching vehicle data for:', vehicleId)
-      const apiBase = process.env.NEXT_PUBLIC_V2V_API || 'http://localhost:3002'
+      const apiBase = process.env.NEXT_PUBLIC_V2V_API || 'https://akhyana-websocket.onrender.com'
       const url = `${apiBase}/vehicle/${encodeURIComponent(vehicleId)}`
       console.log('🌐 Making API request to:', url)
 

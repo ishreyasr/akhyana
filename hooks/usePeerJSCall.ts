@@ -37,11 +37,11 @@ export function usePeerJSCall(localVehicleId: string | undefined) {
 
         // Create peer with custom ID (using vehicleId as peer ID)
         const peer = new Peer(localVehicleId, {
-            // Use local PeerJS server instead of cloud
-            host: 'localhost',
-            port: 9000,
-            path: '/peerjs',
-            secure: false, // Set to true if using HTTPS
+            // Use production PeerJS server on Render
+            host: process.env.NEXT_PUBLIC_PEERJS_HOST || 'akhyana-peerjs.onrender.com',
+            port: parseInt(process.env.NEXT_PUBLIC_PEERJS_PORT || '443'),
+            path: process.env.NEXT_PUBLIC_PEERJS_PATH || '/peerjs',
+            secure: process.env.NEXT_PUBLIC_PEERJS_SECURE !== 'false', // HTTPS by default
             debug: 2, // Enable debug logging
             config: {
                 iceServers: [

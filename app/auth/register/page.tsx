@@ -142,7 +142,7 @@ function RegisterForm() {
             if (!googleLinked) throw new Error('Please link Google account');
             // Persist user centrally (Supabase) via backend proxy to enforce uniqueness
             const record = { email: personal.email, fullName: personal.fullName, vehicle, password: personal.password };
-            const apiBase = process.env.NEXT_PUBLIC_V2V_API || 'http://localhost:3002';
+            const apiBase = process.env.NEXT_PUBLIC_V2V_API || 'https://akhyana-websocket.onrender.com';
             const url = apiBase.replace(/\/$/, '') + '/user';
             let lastErr: any = null;
             for (let attempt = 1; attempt <= 2; attempt++) {
