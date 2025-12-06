@@ -1,6 +1,5 @@
 {
-    "installCommand": "npm install --legacy-peer-deps --production=false",
-    "ignoreDevDependencies": false,
+    "installCommand": "npm install --legacy-peer-deps",
     "headers": [
         {
             "source": "/(.*)",
