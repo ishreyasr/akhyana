@@ -2,11 +2,14 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 export function middleware(request: NextRequest) {
-    // For now, just allow all requests to pass through
-    // This removes the auth gating temporarily to fix the server error
+    // Allow all requests to pass through
     return NextResponse.next()
 }
 
 export const config = {
-    matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+    // Only run middleware on specific paths to avoid edge runtime issues
+    matcher: [
+        '/connected-vehicle/:path*',
+        '/api/:path*',
+    ],
 }
