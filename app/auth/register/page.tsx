@@ -9,7 +9,7 @@ import { Progress } from '@/components/ui/progress';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Car, User, Wrench } from 'lucide-react';
 import { auth, googleProvider } from '@/lib/firebase';
-import { createUserWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
 import Link from 'next/link';
 
 interface PersonalDetails {
@@ -40,7 +40,44 @@ function RegisterForm() {
     const totalSteps = 3;
     const progress = (step / totalSteps) * 100;
 
-    // Prefill if redirected from Google sign-in
+    // Handle redirect result from Google sign-in
+    useEffect(() => {
+        const checkRedirectResult = async () => {
+            if (!auth) return;
+            
+            try {
+                const result = await getRedirectResult(auth);
+                if (result) {
+                    // User successfully signed in with Google
+                    const user = result.user;
+                    
+                    // Restore form data from before redirect
+                    const savedData = sessionStorage.getItem('pendingRegistration');
+                    if (savedData) {
+                        const { personal: savedPersonal, vehicle: savedVehicle, step: savedStep } = JSON.parse(savedData);
+                        setPersonal(p => ({ ...p, ...savedPersonal, email: user.email || savedPersonal.email }));
+                        setVehicle(savedVehicle);
+                        setStep(savedStep);
+                        sessionStorage.removeItem('pendingRegistration');
+                    } else {
+                        // No saved data, just update email
+                        setPersonal(p => ({ ...p, email: user.email || '' }));
+                    }
+                    
+                    setGoogleLinked(true);
+                }
+            } catch (error: any) {
+                console.error('Redirect result error:', error);
+                if (error.code !== 'auth/popup-closed-by-user') {
+                    setError(error.message || 'Google sign-in failed');
+                }
+            }
+        };
+        
+        checkRedirectResult();
+    }, [auth]);
+
+    // Prefill if redirected from Google sign-in (legacy support)
     useEffect(() => {
         const prefillEmail = searchParams.get('prefillEmail');
         const isGoogle = searchParams.get('google') === '1';
@@ -68,8 +105,21 @@ function RegisterForm() {
         }
         setError(null); setLoading(true);
         try {
-            await signInWithPopup(auth, googleProvider);
-            setGoogleLinked(true);
+            // Use redirect on production (more reliable), popup on localhost
+            const isLocalhost = typeof window !== 'undefined' && 
+                (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+            
+            if (isLocalhost) {
+                // Popup works fine on localhost
+                await signInWithPopup(auth, googleProvider);
+                setGoogleLinked(true);
+            } else {
+                // Redirect is more reliable in production
+                // Save current form data before redirect
+                sessionStorage.setItem('pendingRegistration', JSON.stringify({ personal, vehicle, step }));
+                await signInWithRedirect(auth, googleProvider);
+                // User will be redirected back, we'll handle it on return
+            }
         } catch (e: any) {
             setError(e.message || 'Google linking failed');
         } finally { setLoading(false); }
@@ -228,7 +278,11 @@ function RegisterForm() {
 
 export default function RegisterPage() {
     return (
-        <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+        <Suspense fallback={
+            <div className="min-h-screen bg-background flex items-center justify-center p-4">
+                <div className="text-center">Loading...</div>
+            </div>
+        }>
             <RegisterForm />
         </Suspense>
     );

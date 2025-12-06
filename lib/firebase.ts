@@ -1,4 +1,4 @@
-// Firebase initialization - OPTIONAL
+// Firebase initialization - OPTIONAL (using Supabase as primary auth)
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, type Auth } from 'firebase/auth';
 
@@ -14,22 +14,23 @@ const firebaseConfig = {
 };
 
 // Check if Firebase is configured
-const isConfigured = firebaseConfig.apiKey && firebaseConfig.projectId;
+const isFirebaseConfigured = firebaseConfig.apiKey && firebaseConfig.projectId;
 
+// Only initialize if configured
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
 let googleProvider: GoogleAuthProvider | null = null;
 
-if (isConfigured) {
+if (isFirebaseConfigured) {
     try {
         app = getApps().length ? getApp() : initializeApp(firebaseConfig);
         auth = getAuth(app);
         googleProvider = new GoogleAuthProvider();
     } catch (error) {
-        console.warn('[firebase] Failed to initialize, using Supabase only');
+        console.warn('[firebase] Initialization failed, Firebase auth disabled:', error);
     }
 } else {
-    console.log('[firebase] Not configured, using Supabase for authentication');
+    console.log('[firebase] Not configured, using Supabase only');
 }
 
 export { auth, googleProvider };
