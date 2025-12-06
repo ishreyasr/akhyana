@@ -1,0 +1,51 @@
+services:
+  # Main V2V WebSocket Server
+  - type: web
+    name: v2v-websocket-server
+    runtime: node
+    region: oregon
+    plan: free
+    rootDir: Backend
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: V2V_SERVER_PORT
+        value: 3002
+      - key: NEARBY_RADIUS_METERS
+        value: 500
+      - key: RADIO_ENABLED
+        value: false
+      - key: DISABLE_FIREBASE_AUTH
+        value: 0
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: REDIS_URL
+        sync: false
+    healthCheckPath: /health
+
+  # PeerJS Signaling Server
+  - type: web
+    name: v2v-peerjs-server
+    runtime: node
+    region: oregon
+    plan: free
+    rootDir: Backend
+    buildCommand: npm install
+    startCommand: node peerjs-server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PEERJS_PORT
+        value: 9000
+    healthCheckPath: /
+
+  # Redis Instance (optional, can use external)
+  # - type: redis
+  #   name: v2v-redis
+  #   region: oregon
+  #   plan: free
+  #   maxmemoryPolicy: allkeys-lru
