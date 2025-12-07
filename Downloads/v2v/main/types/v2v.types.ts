@@ -43,6 +43,7 @@ export interface EmergencyAlert {
   location: { lat: number; lng: number };
   severity: 'low' | 'medium' | 'high';
   senderId: string;
+  licensePlate?: string;
   recipientCount?: number;
   /** Whether the alert has been acknowledged (soft-dismissed) in this client session */
   acknowledged?: boolean;

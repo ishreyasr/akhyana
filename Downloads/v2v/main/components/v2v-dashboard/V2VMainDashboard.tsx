@@ -204,6 +204,19 @@ export function V2VMainDashboard({ className }: V2VMainDashboardProps) {
       }
 
       console.log('[V2VMainDashboard] ✅ Alert is from different vehicle, processing...');
+      console.log('[V2VMainDashboard] Payload location data:', payload.location);
+
+      // Try to get license plate from nearby vehicles or payload
+      let licensePlate = payload.licensePlate || null;
+      if (!licensePlate && devices && devices.length > 0) {
+        const senderVehicle = devices.find((d: any) => 
+          d.id === payload.senderId || d.vehicleId === payload.senderId
+        );
+        if (senderVehicle) {
+          licensePlate = senderVehicle.licensePlate || senderVehicle.vehicleInfo?.licensePlate || null;
+          console.log('[V2VMainDashboard] Found license plate from nearby vehicles:', licensePlate);
+        }
+      }
 
       const alert: EmergencyAlert = {
         id: payload.id || `emergency-${Date.now()}`,
@@ -213,10 +226,12 @@ export function V2VMainDashboard({ className }: V2VMainDashboardProps) {
         location: payload.location || { lat: 0, lng: 0 },
         severity: payload.severity || 'high',
         senderId: payload.senderId,
+        licensePlate: licensePlate,
         recipientCount: payload.recipientCount
-      };
+      } as any;
 
       console.log('[V2VMainDashboard] Processed alert:', alert);
+      console.log('[V2VMainDashboard] Alert location:', alert.location);
 
       // Add sender to emergency vehicles set
       setEmergencyVehiclesSet(prev => {

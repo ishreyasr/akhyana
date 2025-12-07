@@ -29,7 +29,7 @@ interface VehicleDetails {
 function RegisterForm() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const [step, setStep] = useState(1); // 1 personal, 2 vehicle, 3 google bind
+    const [step, setStep] = useState(1); // 1 personal, 2 vehicle
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -37,7 +37,7 @@ function RegisterForm() {
     const [vehicle, setVehicle] = useState<VehicleDetails>({ vehicleId: '', licensePlate: '', vehicleType: '', brand: '', model: '' });
     const [googleLinked, setGoogleLinked] = useState(false);
 
-    const totalSteps = 3;
+    const totalSteps = 2;
     const progress = (step / totalSteps) * 100;
 
     // Prefill if redirected from Google sign-in
@@ -89,7 +89,6 @@ function RegisterForm() {
                     // ignore if exists
                 }
             }
-            if (!googleLinked) throw new Error('Please link Google account');
             // Persist user centrally (Supabase) via backend proxy to enforce uniqueness
             const record = { email: personal.email, fullName: personal.fullName, vehicle, password: personal.password };
             const apiBase = process.env.NEXT_PUBLIC_V2V_API || 'http://localhost:3002';
@@ -187,18 +186,10 @@ function RegisterForm() {
                                     <Input id="model" value={vehicle.model} onChange={e => setVehicle(v => ({ ...v, model: e.target.value }))} placeholder="Model (e.g. Model 3)" required />
                                 </div>
                             </div>
-                            <div className="flex justify-between pt-2">
-                                <Button variant="outline" onClick={back}>Back</Button>
-                                <Button onClick={next} disabled={!canContinueVehicle}>Continue</Button>
-                            </div>
-                        </div>
-                    )}
-
-                    {step === 3 && (
-                        <div className="space-y-6">
-                            <h2 className="font-semibold text-sm">Bind Google Account</h2>
-                            <p className="text-xs text-muted-foreground">Link your Google account for seamless sign-in and synchronization.</p>
+                            <Separator className="my-4" />
                             <div className="space-y-4">
+                                <h3 className="font-semibold text-sm">Link Google Account (Optional)</h3>
+                                <p className="text-xs text-muted-foreground">Optionally link your Google account for seamless sign-in and synchronization.</p>
                                 <Button variant={googleLinked ? 'secondary' : 'outline'} disabled={loading || googleLinked} onClick={handleGoogle} className="w-full flex items-center gap-2 justify-center">
                                     <svg className="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21.35 11.1H12v2.9h5.3c-.23 1.5-.92 2.6-1.96 3.4l3.17 2.46c1.85-1.7 2.84-4.2 2.84-7.16 0-.7-.06-1.22-.15-1.6Z" /><path fill="currentColor" d="M12 22c2.43 0 4.47-.8 5.96-2.14l-3.17-2.46c-.85.6-1.94.98-2.79.98-2.14 0-3.96-1.44-4.61-3.38l-3.3 2.56C5.3 20.3 8.4 22 12 22Z" /><path fill="currentColor" d="M7.39 14.99c-.2-.6-.32-1.25-.32-1.99 0-.74.12-1.39.32-1.99L4.09 8.45A9.823 9.823 0 0 0 2 13c0 1.55.37 3.01 1.09 4.55l3.3-2.56Z" /><path fill="currentColor" d="M12 7.5c1.33 0 2.5.46 3.43 1.37l2.57-2.57C16.47 4.82 14.43 4 12 4 8.4 4 5.3 5.7 3.1 8.45l3.3 2.56C8.04 8.94 9.86 7.5 12 7.5Z" /></svg>
                                     {googleLinked ? 'Google Linked' : 'Continue with Google'}
@@ -207,10 +198,9 @@ function RegisterForm() {
                                     <div className="text-xs text-green-600 bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-800 rounded px-2 py-1 text-center">Google account linked</div>
                                 )}
                             </div>
-                            <Separator />
-                            <div className="flex justify-between pt-2">
+                            <div className="flex justify-between pt-4">
                                 <Button variant="outline" onClick={back}>Back</Button>
-                                <Button onClick={finish} disabled={!googleLinked || loading}>{loading ? 'Creating...' : 'Finish & Go to Dashboard'}</Button>
+                                <Button onClick={finish} disabled={!canContinueVehicle || loading}>{loading ? 'Creating...' : 'Finish & Go to Dashboard'}</Button>
                             </div>
                         </div>
                     )}

@@ -74,9 +74,11 @@ function getNearbyVehicles(baseVehicle) {
         name: v.name,
         distance: Number(dist.toFixed(1)),
         signalStrength: v.signalStrength || Math.max(10, 100 - (dist / NEARBY_RADIUS_METERS) * 80),
+        batteryLevel: v.batteryLevel || 100,
         lastSeen: v.lastSeen,
         deviceType: v.type || 'vehicle',
-        isConnectable: true
+        isConnectable: true,
+        licensePlate: v.licensePlate || null
       });
     }
   });
@@ -189,9 +191,11 @@ wss.on('connection', (ws, req) => {
           ws,
           isOnline: true,
           signalStrength: data.signalStrength || 100,
-          batteryLevel: data.batteryLevel || 100
+          batteryLevel: data.batteryLevel || 100,
+          licensePlate: data.licensePlate || null
         };
         vehicles.set(vehicleId, vehicleEntry);
+        console.log(`Vehicle registered: ${vehicleId} (${vehicleEntry.licensePlate || 'no plate'})`);
         safeSend(ws, { event: 'vehicle_registered', data: { vehicleId, name: vehicleEntry.name } });
         // Notify others of new presence
         broadcastJSON(v => v.id !== vehicleId, () => ({ event: 'vehicle_online', data: buildVehiclePublicInfo(vehicleEntry) }));
@@ -203,6 +207,13 @@ wss.on('connection', (ws, req) => {
         if (!v) return;
         v.location = { lat: data.lat, lng: data.lng, updatedAt: new Date().toISOString() };
         v.lastSeen = new Date().toISOString();
+        // Update battery and signal if provided
+        if (typeof data.batteryLevel === 'number') {
+          v.batteryLevel = data.batteryLevel;
+        }
+        if (typeof data.signalStrength === 'number') {
+          v.signalStrength = data.signalStrength;
+        }
         // Compute nearby list for this vehicle & send back
         const nearby = getNearbyVehicles(v);
         safeSend(ws, { event: 'nearby_vehicles', data: { vehicles: nearby, timestamp: new Date().toISOString() } });
@@ -223,6 +234,7 @@ wss.on('connection', (ws, req) => {
       }
       case 'emergency_alert': {
         if (!vehicleId) return;
+        const vehicle = vehicles.get(vehicleId);
         const alertData = {
           id: uuidv4(),
           type: data.type || 'hazard',
@@ -230,8 +242,10 @@ wss.on('connection', (ws, req) => {
           timestamp: new Date().toISOString(),
           location: data.location || null,
           severity: data.severity || 'high',
-          senderId: vehicleId
+          senderId: vehicleId,
+          licensePlate: data.licensePlate || vehicle?.licensePlate || null
         };
+        console.log(`Emergency alert from ${vehicleId} (${alertData.licensePlate || 'no plate'}) at location:`, alertData.location);
         // High priority broadcast
         broadcastJSON(() => true, () => ({ event: 'emergency_alert', data: alertData }));
         break;

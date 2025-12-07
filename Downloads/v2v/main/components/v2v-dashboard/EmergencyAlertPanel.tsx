@@ -135,18 +135,106 @@ export const EmergencyAlertPanel = memo(function EmergencyAlertPanel() {
       return;
     }
 
+    // Get current GPS location with multiple fallbacks
+    const getLocation = (): Promise<{ lat: number; lng: number }> => {
+      return new Promise((resolve) => {
+        // First try: Browser Geolocation API
+        if ('geolocation' in navigator) {
+          console.log('[EmergencyAlertPanel] Requesting GPS location...');
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              const location = {
+                lat: position.coords.latitude,
+                lng: position.coords.longitude
+              };
+              console.log('[EmergencyAlertPanel] ✅ GPS location obtained:', location);
+              resolve(location);
+            },
+            (error) => {
+              console.warn('[EmergencyAlertPanel] GPS error:', error.code, error.message);
+              
+              // Second try: Get from sessionStorage (user profile or previous location)
+              try {
+                const authUser = sessionStorage.getItem('authUser');
+                if (authUser) {
+                  const user = JSON.parse(authUser);
+                  if (user.location?.lat && user.location?.lng) {
+                    console.log('[EmergencyAlertPanel] ✅ Using location from user profile:', user.location);
+                    resolve({ lat: user.location.lat, lng: user.location.lng });
+                    return;
+                  }
+                }
+                
+                // Third try: Get from vehicle status
+                const vehicleStatus = sessionStorage.getItem('vehicleStatus');
+                if (vehicleStatus) {
+                  const status = JSON.parse(vehicleStatus);
+                  if (status.location?.lat && status.location?.lng) {
+                    console.log('[EmergencyAlertPanel] ✅ Using location from vehicle status:', status.location);
+                    resolve({ lat: status.location.lat, lng: status.location.lng });
+                    return;
+                  }
+                }
+              } catch (e) {
+                console.warn('[EmergencyAlertPanel] Error reading stored location:', e);
+              }
+              
+              // Final fallback: Bangalore coordinates
+              console.log('[EmergencyAlertPanel] ⚠️ Using Bangalore fallback coordinates');
+              resolve({ lat: 12.9716, lng: 77.5946 });
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          );
+        } else {
+          console.warn('[EmergencyAlertPanel] Geolocation not available in navigator');
+          // Try stored location before final fallback
+          try {
+            const authUser = sessionStorage.getItem('authUser');
+            if (authUser) {
+              const user = JSON.parse(authUser);
+              if (user.location?.lat && user.location?.lng) {
+                console.log('[EmergencyAlertPanel] ✅ Using stored location:', user.location);
+                resolve({ lat: user.location.lat, lng: user.location.lng });
+                return;
+              }
+            }
+          } catch (e) { }
+          resolve({ lat: 12.9716, lng: 77.5946 });
+        }
+      });
+    };
+
+    const location = await getLocation();
+    console.log('[EmergencyAlertPanel] 📍 Final location to send:', location);
+
+    // Get license plate from session storage
+    let licensePlate = null;
+    try {
+      const authUser = sessionStorage.getItem('authUser');
+      if (authUser) {
+        const user = JSON.parse(authUser);
+        licensePlate = user.vehicle?.licensePlate || user.licensePlate || null;
+        console.log('[EmergencyAlertPanel] 🚗 License plate:', licensePlate);
+      }
+    } catch (e) {
+      console.warn('[EmergencyAlertPanel] Error reading license plate:', e);
+    }
+
     console.log('[EmergencyAlertPanel] Sending emergency alert:', {
       type: alertType,
       senderId: vehicleId,
-      message: `${alertConfig.label} reported`
+      message: `${alertConfig.label} reported`,
+      location,
+      licensePlate
     });
 
     await broadcastAlert({
       type: alertType,
       message: `${alertConfig.label} reported`,
-      location: { lat: 0, lng: 0 }, // This would be populated with actual GPS coordinates
+      location,
       severity: alertConfig.priority === 'high' ? 'high' : 'medium',
-      senderId: vehicleId
+      senderId: vehicleId,
+      licensePlate
     });
   }, [alertTypes, broadcastAlert, vehicleId]);
 

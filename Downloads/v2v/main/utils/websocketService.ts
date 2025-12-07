@@ -517,11 +517,12 @@ export class WebSocketService {
   }
 
   // ---------------- New High-Level API ----------------
-  async registerVehicle(params: { vehicleId: string; driverName?: string; vehicleInfo?: any }): Promise<boolean> {
+  async registerVehicle(params: { vehicleId: string; driverName?: string; batteryLevel?: number; signalStrength?: number; vehicleInfo?: any }): Promise<boolean> {
     this.vehicleId = params.vehicleId;
     this.pendingRegisterPayload = params;
 
-    console.log('[WebSocketService] Registering vehicle:', params.vehicleId);
+    const licensePlate = params.vehicleInfo?.licensePlate || null;
+    console.log('[WebSocketService] Registering vehicle:', params.vehicleId, 'license:', licensePlate, 'battery:', params.batteryLevel, 'signal:', params.signalStrength);
 
     if (typeof window !== 'undefined' && (window as any).__V2V_DEBUG_CLIENT__) {
       console.debug('[V2V] registerVehicle', params);
@@ -537,8 +538,12 @@ export class WebSocketService {
       }
     }
 
-    // Send registration
-    const sent = this.sendEvent('register', params);
+    // Send registration with battery, signal, and license plate
+    const registrationData = {
+      ...params,
+      licensePlate: licensePlate
+    };
+    const sent = this.sendEvent('register', registrationData);
     if (sent) {
       console.log('[WebSocketService] Vehicle registration sent successfully');
       return true;
@@ -548,7 +553,7 @@ export class WebSocketService {
     }
   }
 
-  updateLocation(lat: number, lon: number) {
+  updateLocation(lat: number, lon: number, battery?: number, signal?: number) {
     if (!this.vehicleId) return;
     if (!this.registered) {
       // Defer until registration completes
@@ -559,13 +564,13 @@ export class WebSocketService {
     if (!(this as any)._locState) {
       (this as any)._locState = {
         lastSent: 0,
-        pending: null as null | { lat: number; lon: number },
+        pending: null as null | { lat: number; lon: number; battery?: number; signal?: number },
         timer: null as any,
         interval: 200
       };
     }
     const st = (this as any)._locState;
-    st.pending = { lat, lon };
+    st.pending = { lat, lon, battery, signal };
     const now = Date.now();
     const dueIn = st.interval - (now - st.lastSent);
     const sendNow = dueIn <= 0;
@@ -574,9 +579,9 @@ export class WebSocketService {
       if (!this.vehicleId) return;
       const p = st.pending; st.pending = null;
       if (typeof window !== 'undefined' && (window as any).__V2V_DEBUG_CLIENT__) {
-        console.debug('[V2V] send location_update', { vehicleId: this.vehicleId, lat: p.lat, lon: p.lon });
+        console.debug('[V2V] send location_update', { vehicleId: this.vehicleId, lat: p.lat, lon: p.lon, battery: p.battery, signal: p.signal });
       }
-      this.sendEvent('location_update', { vehicleId: this.vehicleId, lat: p.lat, lon: p.lon });
+      this.sendEvent('location_update', { vehicleId: this.vehicleId, lat: p.lat, lon: p.lon, batteryLevel: p.battery, signalStrength: p.signal });
       st.lastSent = Date.now();
     };
     if (sendNow) {

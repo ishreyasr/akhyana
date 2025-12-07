@@ -94,6 +94,12 @@ export default function ConnectedVehicleDashboard() {
   const analyserRef = useRef<AnalyserNode | null>(null)
   const animationFrameRef = useRef<number | null>(null)
   const [audioLevel, setAudioLevel] = useState(0) // 0 - 1
+  
+  // GPS stabilization state
+  const prevVehicle1Coords = useRef<{lat: number, lng: number}>({lat: 0, lng: 0})
+  const prevConnectedCoords = useRef<{lat: number, lng: number}>({lat: 0, lng: 0})
+  const smoothedDistance = useRef<number>(0)
+  const lastDistanceUpdate = useRef<number>(0)
   const [geoWatchId, setGeoWatchId] = useState<number | null>(null)
   const [geoError, setGeoError] = useState<string | null>(null)
   const [micPermissionDenied, setMicPermissionDenied] = useState(false)
@@ -516,18 +522,34 @@ export default function ConnectedVehicleDashboard() {
             newLat = connectedVehicleData.latitude
           }
 
+          // Extract battery and signal from various possible fields
+          let battery = prev.battery
+          let signal = prev.signal
+          
+          if (typeof connectedVehicleData.batteryLevel === 'number') {
+            battery = connectedVehicleData.batteryLevel
+          } else if (typeof connectedVehicleData.battery === 'number') {
+            battery = connectedVehicleData.battery
+          }
+          
+          if (typeof connectedVehicleData.signalStrength === 'number') {
+            signal = connectedVehicleData.signalStrength
+          } else if (typeof connectedVehicleData.signal === 'number') {
+            signal = connectedVehicleData.signal
+          }
+
           return {
             ...prev,
-            name: connectedVehicleData.driverName || prev.name,
+            name: connectedVehicleData.driverName || connectedVehicleData.name || prev.name,
             licensePlate: extractLicensePlate(connectedVehicleData, prev.licensePlate),
             lat: newLat,
             lng: newLng,
             // Update movement data if available
             speed: typeof connectedVehicleData.speed === 'number' ? connectedVehicleData.speed : prev.speed,
             heading: typeof connectedVehicleData.heading === 'number' ? connectedVehicleData.heading : prev.heading,
-            // Update other properties if available
-            battery: typeof connectedVehicleData.battery === 'number' ? connectedVehicleData.battery : prev.battery,
-            signal: typeof connectedVehicleData.signal === 'number' ? connectedVehicleData.signal : prev.signal,
+            // Update other properties with extracted values
+            battery: battery,
+            signal: signal,
           }
         })
       }
@@ -609,8 +631,23 @@ export default function ConnectedVehicleDashboard() {
     }
   }, [connectedVehicle?.lat, connectedVehicle?.lng])
 
-  // Calculate distance between two GPS coordinates
-  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number) => {
+  // Calculate distance between two GPS coordinates with smoothing
+  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number, shouldSmooth: boolean = true) => {
+    // Return 0 if coordinates are invalid
+    if (lat1 === 0 && lng1 === 0 || lat2 === 0 && lng2 === 0) {
+      return smoothedDistance.current
+    }
+    
+    // Check if coordinates are identical or extremely close (same location)
+    const latDiff = Math.abs(lat2 - lat1)
+    const lngDiff = Math.abs(lng2 - lng1)
+    
+    // If coordinates are nearly identical (within ~11 meters), return 0
+    if (latDiff < 0.0001 && lngDiff < 0.0001) {
+      smoothedDistance.current = 0
+      return 0
+    }
+    
     const R = 6371 // Earth's radius in kilometers
     const dLat = ((lat2 - lat1) * Math.PI) / 180
     const dLng = ((lng2 - lng1) * Math.PI) / 180
@@ -618,7 +655,66 @@ export default function ConnectedVehicleDashboard() {
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
       Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) * Math.sin(dLng / 2)
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-    return R * c
+    let rawDistance = R * c
+    
+    // For very small distances (< 10 meters), display as 0 to avoid confusion in testing scenarios
+    if (rawDistance < 0.01) {
+      smoothedDistance.current = 0
+      return 0
+    }
+    
+    // Round to 2 decimal places to reduce micro-fluctuations
+    rawDistance = Math.round(rawDistance * 100) / 100
+    
+    if (!shouldSmooth) {
+      return rawDistance
+    }
+    
+    // Apply exponential moving average for smooth distance changes
+    // alpha = 0.3 means 30% new value, 70% old value (adjust for more/less smoothing)
+    const alpha = 0.3
+    const smoothed = smoothedDistance.current === 0 
+      ? rawDistance 
+      : (alpha * rawDistance) + ((1 - alpha) * smoothedDistance.current)
+    
+    // Round smoothed distance to 2 decimal places
+    const roundedSmoothed = Math.round(smoothed * 100) / 100
+    smoothedDistance.current = roundedSmoothed
+    return roundedSmoothed
+  }
+
+  // Smooth GPS coordinates to reduce jitter
+  const smoothCoordinates = (newLat: number, newLng: number, prevLat: number, prevLng: number, minChange: number = 0.0001) => {
+    // Check if coordinates are valid
+    if (newLat === 0 && newLng === 0) {
+      return { lat: prevLat, lng: prevLng }
+    }
+    
+    // If this is the first update or coordinates are identical, return as-is
+    if (prevLat === 0 && prevLng === 0) {
+      return { lat: newLat, lng: newLng }
+    }
+    
+    // Check if coordinates are identical (same location)
+    if (newLat === prevLat && newLng === prevLng) {
+      return { lat: newLat, lng: newLng }
+    }
+    
+    // Calculate change magnitude
+    const latDiff = Math.abs(newLat - prevLat)
+    const lngDiff = Math.abs(newLng - prevLng)
+    
+    // If change is too small (noise/jitter), keep previous value
+    if (latDiff < minChange && lngDiff < minChange) {
+      return { lat: prevLat, lng: prevLng }
+    }
+    
+    // Apply exponential moving average for larger changes
+    const alpha = 0.4 // 40% new value, 60% old value
+    const smoothedLat = (alpha * newLat) + ((1 - alpha) * prevLat)
+    const smoothedLng = (alpha * newLng) + ((1 - alpha) * prevLng)
+    
+    return { lat: smoothedLat, lng: smoothedLng }
   }
 
   // Get real-time battery and system data
@@ -677,8 +773,8 @@ export default function ConnectedVehicleDashboard() {
     // Update immediately
     updateSystemData()
 
-    // Update every 30 seconds
-    const interval = setInterval(updateSystemData, 30000)
+    // Update every 5 seconds for real-time feel
+    const interval = setInterval(updateSystemData, 5000)
 
     return () => clearInterval(interval)
   }, [])
@@ -746,24 +842,50 @@ export default function ConnectedVehicleDashboard() {
         if (!prev) return prev
 
         // Extract location from the nearby vehicle data
-        let newLat = prev.lat
-        let newLng = prev.lng
+        let rawLat = prev.lat
+        let rawLng = prev.lng
 
         // Check if vehicleInfo has coordinates
         if (nearbyConnectedVehicle.vehicleInfo) {
           // console.debug('vehicle_info', nearbyConnectedVehicle.vehicleInfo)
           const info = nearbyConnectedVehicle.vehicleInfo
-          if (typeof info.lat === 'number' && !isNaN(info.lat)) newLat = info.lat
-          if (typeof info.lng === 'number' && !isNaN(info.lng)) newLng = info.lng
-          if (typeof info.longitude === 'number' && !isNaN(info.longitude)) newLng = info.longitude
-          if (typeof info.latitude === 'number' && !isNaN(info.latitude)) newLat = info.latitude
+          if (typeof info.lat === 'number' && !isNaN(info.lat)) rawLat = info.lat
+          if (typeof info.lng === 'number' && !isNaN(info.lng)) rawLng = info.lng
+          if (typeof info.longitude === 'number' && !isNaN(info.longitude)) rawLng = info.longitude
+          if (typeof info.latitude === 'number' && !isNaN(info.latitude)) rawLat = info.latitude
         }
 
         // Check direct properties
-        if (typeof nearbyConnectedVehicle.lat === 'number' && !isNaN(nearbyConnectedVehicle.lat)) newLat = nearbyConnectedVehicle.lat
-        if (typeof nearbyConnectedVehicle.lng === 'number' && !isNaN(nearbyConnectedVehicle.lng)) newLng = nearbyConnectedVehicle.lng
-        if (typeof nearbyConnectedVehicle.longitude === 'number' && !isNaN(nearbyConnectedVehicle.longitude)) newLng = nearbyConnectedVehicle.longitude
-        if (typeof nearbyConnectedVehicle.latitude === 'number' && !isNaN(nearbyConnectedVehicle.latitude)) newLat = nearbyConnectedVehicle.latitude
+        if (typeof nearbyConnectedVehicle.lat === 'number' && !isNaN(nearbyConnectedVehicle.lat)) rawLat = nearbyConnectedVehicle.lat
+        if (typeof nearbyConnectedVehicle.lng === 'number' && !isNaN(nearbyConnectedVehicle.lng)) rawLng = nearbyConnectedVehicle.lng
+        if (typeof nearbyConnectedVehicle.longitude === 'number' && !isNaN(nearbyConnectedVehicle.longitude)) rawLng = nearbyConnectedVehicle.longitude
+        if (typeof nearbyConnectedVehicle.latitude === 'number' && !isNaN(nearbyConnectedVehicle.latitude)) rawLat = nearbyConnectedVehicle.latitude
+        
+        // Apply smoothing to reduce GPS jitter
+        const smoothed = smoothCoordinates(rawLat, rawLng, prevConnectedCoords.current.lat, prevConnectedCoords.current.lng)
+        prevConnectedCoords.current = smoothed
+        const newLat = smoothed.lat
+        const newLng = smoothed.lng
+
+        // Extract battery and signal from various possible fields
+        let battery = prev.battery
+        let signal = prev.signal
+        
+        if (typeof nearbyConnectedVehicle.batteryLevel === 'number') {
+          battery = nearbyConnectedVehicle.batteryLevel
+        } else if (typeof nearbyConnectedVehicle.battery === 'number') {
+          battery = nearbyConnectedVehicle.battery
+        } else if (typeof nearbyConnectedVehicle.vehicleInfo?.battery === 'number') {
+          battery = nearbyConnectedVehicle.vehicleInfo.battery
+        }
+        
+        if (typeof nearbyConnectedVehicle.signalStrength === 'number') {
+          signal = nearbyConnectedVehicle.signalStrength
+        } else if (typeof nearbyConnectedVehicle.signal === 'number') {
+          signal = nearbyConnectedVehicle.signal
+        } else if (typeof nearbyConnectedVehicle.vehicleInfo?.signal === 'number') {
+          signal = nearbyConnectedVehicle.vehicleInfo.signal
+        }
 
         const updated = {
           ...prev,
@@ -774,8 +896,8 @@ export default function ConnectedVehicleDashboard() {
           lng: newLng,
           speed: (typeof nearbyConnectedVehicle.vehicleInfo?.speed === 'number') ? nearbyConnectedVehicle.vehicleInfo.speed : prev.speed,
           heading: (typeof nearbyConnectedVehicle.vehicleInfo?.heading === 'number') ? nearbyConnectedVehicle.vehicleInfo.heading : prev.heading,
-          battery: (typeof nearbyConnectedVehicle.batteryLevel === 'number') ? nearbyConnectedVehicle.batteryLevel : prev.battery,
-          signal: (typeof nearbyConnectedVehicle.signalStrength === 'number') ? nearbyConnectedVehicle.signalStrength : prev.signal,
+          battery: battery,
+          signal: signal,
         }
 
         // console.debug('updated_connected_from_nearby', updated)
@@ -829,16 +951,24 @@ export default function ConnectedVehicleDashboard() {
         if (!prev) return prev
 
         const updates: any = { ...prev }
+        
+        // Get raw coordinates from payload
+        let rawLat = prev.lat
+        let rawLng = prev.lng
 
         // Update coordinates if provided
         if (typeof payload.lat === 'number' && !isNaN(payload.lat)) {
-          // console.debug('update_lat', { from: prev.lat, to: payload.lat })
-          updates.lat = payload.lat
+          rawLat = payload.lat
         }
         if (typeof payload.lon === 'number' && !isNaN(payload.lon)) {
-          // console.debug('update_connected_lng', { from: prev.lng, to: payload.lon })
-          updates.lng = payload.lon
+          rawLng = payload.lon
         }
+        
+        // Apply smoothing to reduce GPS jitter
+        const smoothed = smoothCoordinates(rawLat, rawLng, prevConnectedCoords.current.lat, prevConnectedCoords.current.lng)
+        prevConnectedCoords.current = smoothed
+        updates.lat = smoothed.lat
+        updates.lng = smoothed.lng
 
         // Update speed and heading if available
         if (typeof payload.speed === 'number' && !isNaN(payload.speed)) {
@@ -863,10 +993,22 @@ export default function ConnectedVehicleDashboard() {
     return () => { webSocketService.unsubscribe('peer_location', handler) }
   }, [connectedVehicle?.id])
 
-  // Update distance calculation if connectedVehicle selected and has coords
+  // Update distance calculation if connectedVehicle selected and has coords with throttling
   useEffect(() => {
-    if (!connectedVehicle) { setDistance(0); return }
-    const dist = calculateDistance(vehicle1.lat, vehicle1.lng, connectedVehicle.lat, connectedVehicle.lng)
+    if (!connectedVehicle) { 
+      setDistance(0)
+      smoothedDistance.current = 0
+      return 
+    }
+    
+    // Throttle distance updates to every 1000ms (1 second) for stability
+    const now = Date.now()
+    if (now - lastDistanceUpdate.current < 1000) {
+      return
+    }
+    lastDistanceUpdate.current = now
+    
+    const dist = calculateDistance(vehicle1.lat, vehicle1.lng, connectedVehicle.lat, connectedVehicle.lng, true)
     setDistance(dist)
   }, [vehicle1.lat, vehicle1.lng, connectedVehicle?.lat, connectedVehicle?.lng, connectedVehicle?.id])
 
@@ -1093,6 +1235,8 @@ export default function ConnectedVehicleDashboard() {
         await register({
           vehicleId: deviceId,
           driverName: deviceName,
+          batteryLevel: vehicle1.battery || 85,
+          signalStrength: vehicle1.signal || 85,
           vehicleInfo: {
             licensePlate: licensePlate,
             model: 'Connected Vehicle',
@@ -1105,8 +1249,8 @@ export default function ConnectedVehicleDashboard() {
           // Small delay to ensure registration is complete
           setTimeout(() => {
             if (!cancelled) {
-              // Use current vehicle1 position at the time of execution
-              updateLocation(vehicle1.lat, vehicle1.lng)
+              // Use current vehicle1 position at the time of execution with battery/signal
+              updateLocation(vehicle1.lat, vehicle1.lng, vehicle1.battery, vehicle1.signal)
               // Trigger a manual refresh event to force nearby devices update
               window.dispatchEvent(new CustomEvent('v2v-manual-refresh'))
             }
@@ -1115,7 +1259,7 @@ export default function ConnectedVehicleDashboard() {
           // Set up periodic refresh to ensure we get updated data
           const refreshInterval = setInterval(() => {
             if (!cancelled) {
-              updateLocation(vehicle1.lat, vehicle1.lng)
+              updateLocation(vehicle1.lat, vehicle1.lng, vehicle1.battery, vehicle1.signal)
               window.dispatchEvent(new CustomEvent('v2v-manual-refresh'))
             }
           }, 10000) // Refresh every 10 seconds
@@ -1319,10 +1463,21 @@ export default function ConnectedVehicleDashboard() {
     const id = navigator.geolocation.watchPosition(
       pos => {
         setGeoError(null)
+        
+        // Apply smoothing to my vehicle coordinates
+        const smoothed = smoothCoordinates(
+          pos.coords.latitude, 
+          pos.coords.longitude, 
+          prevVehicle1Coords.current.lat, 
+          prevVehicle1Coords.current.lng,
+          0.00005 // Tighter threshold for my vehicle (more sensitive)
+        )
+        prevVehicle1Coords.current = smoothed
+        
         const newVehicle1 = {
           ...vehicle1,
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
+          lat: smoothed.lat,
+          lng: smoothed.lng,
           // Approximate speed if provided (m/s to km/h)
           speed: typeof pos.coords.speed === 'number' && !Number.isNaN(pos.coords.speed) ? Math.max(0, pos.coords.speed * 3.6) : vehicle1.speed,
           heading: typeof pos.coords.heading === 'number' && !Number.isNaN(pos.coords.heading) ? pos.coords.heading : vehicle1.heading,
@@ -1333,10 +1488,10 @@ export default function ConnectedVehicleDashboard() {
 
         // console.debug('my_vehicle_location', { lat: pos.coords.latitude, lng: pos.coords.longitude, speed: newVehicle1.speed, heading: newVehicle1.heading })
 
-        // Push to backend throttled by browser watch (roughly every position update)
+        // Push to backend with battery and signal data
         if (updateLocation) {
-          updateLocation(pos.coords.latitude, pos.coords.longitude)
-          // console.debug('sent_location_update', pos.coords.latitude, pos.coords.longitude)
+          updateLocation(pos.coords.latitude, pos.coords.longitude, newVehicle1.battery, newVehicle1.signal)
+          // console.debug('sent_location_update', pos.coords.latitude, pos.coords.longitude, newVehicle1.battery, newVehicle1.signal)
         }
       },
       err => {
@@ -1577,7 +1732,15 @@ export default function ConnectedVehicleDashboard() {
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <div className="text-center space-y-2">
-                <div className="text-2xl font-bold text-green-600">{connectedVehicle ? distance.toFixed(2) + ' km' : '—'}</div>
+                <div className="text-2xl font-bold text-green-600">
+                  {connectedVehicle ? (
+                    distance < 1 ? (
+                      `${(distance * 1000).toFixed(0)} m`
+                    ) : (
+                      `${distance.toFixed(2)} km`
+                    )
+                  ) : '—'}
+                </div>
                 <div className="text-sm text-muted-foreground">{connectedVehicle ? 'Distance Between Vehicles' : 'No vehicle selected'}</div>
               </div>
 
@@ -1684,29 +1847,29 @@ export default function ConnectedVehicleDashboard() {
                   </div>
                 )}
               </div>
-            </div>
 
-            <div className="text-center space-y-2">
-              <div className="relative inline-block">
-                <Button
-                  onClick={handleOpenMessaging}
-                  variant={showMessaging ? "secondary" : "outline"}
-                  className="w-full sm:w-auto"
-                >
-                  <MessageSquare className="h-4 w-4 mr-2" />
-                  Messages
-                </Button>
-                {unreadCount > 0 && (
-                  <Badge
-                    variant="destructive"
-                    className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center"
+              <div className="text-center space-y-2">
+                <div className="relative inline-block">
+                  <Button
+                    onClick={handleOpenMessaging}
+                    variant={showMessaging ? "secondary" : "outline"}
+                    className="w-full sm:w-auto"
                   >
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </Badge>
-                )}
-              </div>
-              <div className="text-sm text-muted-foreground">
-                {messages.filter(m => m.type === 'text').length} messages
+                    <MessageSquare className="h-4 w-4 mr-2" />
+                    Messages
+                  </Button>
+                  {unreadCount > 0 && (
+                    <Badge
+                      variant="destructive"
+                      className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center"
+                    >
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </Badge>
+                  )}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {messages.filter(m => m.type === 'text').length} messages
+                </div>
               </div>
             </div>
           </CardContent>

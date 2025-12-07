@@ -116,20 +116,38 @@ export function EmergencyAlertDialog({ alert, open, onConnect, onIgnore }: Emerg
                     </div>
 
                     {/* Vehicle Information */}
-                    {alert.senderId && (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Car className="h-4 w-4" />
-                            <span>Vehicle ID: {alert.senderId}</span>
-                        </div>
-                    )}
+                    <div className="grid grid-cols-1 gap-3">
+                        {(alert as any).licensePlate && (
+                            <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-950 rounded-lg">
+                                <Car className="h-5 w-5 text-blue-600" />
+                                <div>
+                                    <p className="text-xs text-muted-foreground">Vehicle License Plate</p>
+                                    <p className="text-lg font-bold text-blue-600">{(alert as any).licensePlate}</p>
+                                </div>
+                            </div>
+                        )}
 
-                    {/* Location Information */}
-                    {alert.location && (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <MapPin className="h-4 w-4" />
-                            <span>Location: {alert.location.lat.toFixed(4)}, {alert.location.lng.toFixed(4)}</span>
-                        </div>
-                    )}
+                        {/* Location Information */}
+                        {alert.location && alert.location.lat !== 0 && alert.location.lng !== 0 ? (
+                            <div className="flex items-center gap-3 p-3 bg-green-50 dark:bg-green-950 rounded-lg">
+                                <MapPin className="h-5 w-5 text-green-600" />
+                                <div>
+                                    <p className="text-xs text-muted-foreground">GPS Location</p>
+                                    <p className="text-sm font-mono text-green-600">
+                                        {alert.location.lat.toFixed(6)}, {alert.location.lng.toFixed(6)}
+                                    </p>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-3 p-3 bg-amber-50 dark:bg-amber-950 rounded-lg">
+                                <MapPin className="h-5 w-5 text-amber-600" />
+                                <div>
+                                    <p className="text-xs text-muted-foreground">GPS Location</p>
+                                    <p className="text-sm text-amber-600">Location unavailable</p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
 
                     {/* Warning Message */}
                     <div className="p-3 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg">

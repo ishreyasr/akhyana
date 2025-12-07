@@ -4,6 +4,8 @@ import { webSocketService } from '../utils/websocketService';
 interface RegistrationParams {
   vehicleId: string;
   driverName?: string;
+  batteryLevel?: number;
+  signalStrength?: number;
   vehicleInfo?: { licensePlate?: string; model?: string; color?: string };
 }
 
@@ -32,8 +34,8 @@ export function useV2VBackend() {
     return result;
   }, []);
 
-  const updateLocation = useCallback((lat: number, lon: number) => {
-    webSocketService.updateLocation(lat, lon);
+  const updateLocation = useCallback((lat: number, lon: number, battery?: number, signal?: number) => {
+    webSocketService.updateLocation(lat, lon, battery, signal);
   }, []);
 
   // Monitor WebSocket connection state
